@@ -1,3 +1,4 @@
+// index.js
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import WebSocket from "ws";
@@ -72,7 +73,19 @@ fastify.get("/ws", { websocket: true }, (connection) => {
 
   elevenLabsSocket.on("open", () => {
     console.log("🟢 Connected to ElevenLabs");
+
+    // Initial handshake
     elevenLabsSocket.send(JSON.stringify({ type: "conversation_initiation_client_data" }));
+
+    // Request μ-law 8000 Hz audio from ElevenLabs
+    elevenLabsSocket.send(JSON.stringify({
+      type: "agent_output_audio_format",
+      audio_format: {
+        encoding: "mulaw",
+        sample_rate: 8000,
+      },
+    }));
+    console.log("🛠️ Requested μ-law 8000Hz audio from ElevenLabs");
   });
 
   elevenLabsSocket.on("message", (data) => {
@@ -82,7 +95,11 @@ fastify.get("/ws", { websocket: true }, (connection) => {
         elevenLabsSocket.send(JSON.stringify({ type: "pong", event_id: msg.event_id }));
       } else if (msg.audio) {
         const audioBuffer = Buffer.from(msg.audio, "base64");
+        console.log("✅ Received audio from ElevenLabs:", audioBuffer.length);
+
         const ulawBuffer = pcm16ToUlaw(audioBuffer);
+        console.log("🔁 Converted to μ-law, length:", ulawBuffer.length);
+
         telecmiSocket.send(ulawBuffer);
         console.log("📤 Sent audio back to TeleCMI (converted)");
       } else {
