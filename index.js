@@ -1,19 +1,20 @@
-// index.js
 import Fastify from "fastify";
 import fastifyWebsocket from "@fastify/websocket";
 import WebSocket from "ws";
 import dotenv from "dotenv";
+import { StreamAction } from "piopiy";
+import net from "net";
 
 dotenv.config();
 console.log("🔍 CHECKPOINT: index.js loaded");
 
 const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
-
 console.log("🎯 Using Agent ID:", ELEVENLABS_AGENT_ID);
 console.log("🔐 API Key loaded:", ELEVENLABS_API_KEY ? "✅ YES" : "❌ NO");
 
 const fastify = Fastify();
 fastify.register(fastifyWebsocket);
+const stream = new StreamAction();
 
 function ulawToPcm16(buffer) {
   const MULAW_BIAS = 33;
@@ -74,10 +75,7 @@ fastify.get("/ws", { websocket: true }, (connection) => {
   elevenLabsSocket.on("open", () => {
     console.log("🟢 Connected to ElevenLabs");
 
-    // Initial handshake
     elevenLabsSocket.send(JSON.stringify({ type: "conversation_initiation_client_data" }));
-
-    // Request μ-law 8000 Hz audio from ElevenLabs
     elevenLabsSocket.send(JSON.stringify({
       type: "agent_output_audio_format",
       audio_format: {
@@ -85,10 +83,10 @@ fastify.get("/ws", { websocket: true }, (connection) => {
         sample_rate: 8000,
       },
     }));
-    console.log("🛠️ Requested μ-law 8000Hz audio from ElevenLabs");
+    console.log("🛠 Requested μ-law 8000Hz audio from ElevenLabs");
   });
 
-  elevenLabsSocket.on("message", (data) => {
+  elevenLabsSocket.on("message", async (data) => {
     try {
       const msg = JSON.parse(data);
       if (msg.type === "ping") {
@@ -97,11 +95,16 @@ fastify.get("/ws", { websocket: true }, (connection) => {
         const audioBuffer = Buffer.from(msg.audio, "base64");
         console.log("✅ Received audio from ElevenLabs:", audioBuffer.length);
 
-        const ulawBuffer = pcm16ToUlaw(audioBuffer);
-        console.log("🔁 Converted to μ-law, length:", ulawBuffer.length);
+        const base64Raw = audioBuffer.toString("base64");
 
-        telecmiSocket.send(ulawBuffer);
-        console.log("📤 Sent audio back to TeleCMI (converted)");
+        await stream.playStream(base64Raw, "raw", 8000);
+        console.log("📤 Piopiy streaming base64 audio (8000Hz raw)");
+
+        if (telecmiSocket.readyState === WebSocket.OPEN) {
+          const ulawBuffer = pcm16ToUlaw(audioBuffer);
+          telecmiSocket.send(ulawBuffer);
+          console.log("📤 Sent audio back to TeleCMI (converted)");
+        }
       } else {
         console.log("📩 ElevenLabs message:", msg);
       }
@@ -145,11 +148,33 @@ fastify.get("/ws", { websocket: true }, (connection) => {
   });
 });
 
-const PORT = process.env.PORT || 3020;
-fastify.listen({ port: PORT, host: "0.0.0.0" }, (err, address) => {
-  if (err) {
-    console.error("❌ Server failed to start:", err);
-    process.exit(1);
+const tryListen = (port) => {
+  return new Promise((resolve, reject) => {
+    const tester = net.createServer()
+      .once('error', err => err.code === 'EADDRINUSE' ? reject() : resolve(port))
+      .once('listening', () => tester.close(() => resolve(port)))
+      .listen(port);
+  });
+};
+
+const startServer = async () => {
+  let port = parseInt(process.env.PORT, 10) || 3020;
+  while (true) {
+    try {
+      await tryListen(port);
+      fastify.listen({ port, host: "0.0.0.0" }, (err, address) => {
+        if (err) {
+          console.error("❌ Server failed to start:", err);
+          process.exit(1);
+        }
+        console.log(`🚀 WebSocket Proxy Server running on ${address}/ws`);
+      });
+      break;
+    } catch {
+      console.warn(`⚠️ Port ${port} in use. Trying ${port + 1}...`);
+      port++;
+    }
   }
-  console.log(`🚀 WebSocket Proxy Server running on ${address}/ws`);
-});
+};
+
+startServer();
