@@ -9,12 +9,19 @@ dotenv.config();
 console.log("🔍 CHECKPOINT: index.js loaded");
 
 const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
-console.log("🎯 Using Agent ID:", ELEVENLABS_AGENT_ID);
-console.log("🔐 API Key loaded:", ELEVENLABS_API_KEY ? "✅ YES" : "❌ NO");
+
+console.log("🔐 API Key loaded:", ELEVENLABS_API_KEY ? "✅ SET" : "❌ MISSING");
+console.log("🎙 Voice ID:", ELEVENLABS_AGENT_ID ? "✅ SET" : "❌ MISSING");
 
 const fastify = Fastify();
 fastify.register(fastifyWebsocket);
+console.log("✅ WebSocket plugin registered");
+
 const stream = new StreamAction();
+
+fastify.get("/", async (req, reply) => {
+  reply.send({ status: "✅ WebSocket server is running" });
+});
 
 function ulawToPcm16(buffer) {
   const MULAW_BIAS = 33;
@@ -55,7 +62,7 @@ function pcm16ToUlaw(buffer) {
 
 fastify.get("/ws", { websocket: true }, (connection) => {
   const telecmiSocket = connection.socket;
-  console.log("✅ TeleCMI connected");
+  console.log("📞 TeleCMI connected");
 
   if (!ELEVENLABS_AGENT_ID || !ELEVENLABS_API_KEY) {
     console.error("❌ Missing ElevenLabs credentials");
@@ -93,17 +100,16 @@ fastify.get("/ws", { websocket: true }, (connection) => {
         elevenLabsSocket.send(JSON.stringify({ type: "pong", event_id: msg.event_id }));
       } else if (msg.audio) {
         const audioBuffer = Buffer.from(msg.audio, "base64");
-        console.log("✅ Received audio from ElevenLabs:", audioBuffer.length);
+        console.log("🔊 Received audio from ElevenLabs:", audioBuffer.length);
 
         const base64Raw = audioBuffer.toString("base64");
-
         await stream.playStream(base64Raw, "raw", 8000);
         console.log("📤 Piopiy streaming base64 audio (8000Hz raw)");
 
         if (telecmiSocket.readyState === WebSocket.OPEN) {
           const ulawBuffer = pcm16ToUlaw(audioBuffer);
           telecmiSocket.send(ulawBuffer);
-          console.log("📤 Sent audio back to TeleCMI (converted)");
+          console.log("📨 Sent audio back to TeleCMI (converted)");
         }
       } else {
         console.log("📩 ElevenLabs message:", msg);
@@ -168,6 +174,8 @@ const startServer = async () => {
           process.exit(1);
         }
         console.log(`🚀 WebSocket Proxy Server running on ${address}/ws`);
+        console.log(`🔗 WebSocket endpoint: ws://localhost:${port}/ws`);
+        console.log(`❤️ Health check: http://localhost:${port}/`);
       });
       break;
     } catch {
