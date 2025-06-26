@@ -168,15 +168,9 @@ const startServer = async () => {
   while (true) {
     try {
       await tryListen(port);
-      fastify.listen({ port, host: "0.0.0.0" }, (err, address) => {
-        if (err) {
-          console.error("❌ Server failed to start:", err);
-          process.exit(1);
-        }
-        console.log(`🚀 WebSocket Proxy Server running on ${address}/ws`);
-        console.log(`🔗 WebSocket endpoint: ws://localhost:${port}/ws`);
-        console.log(`❤️ Health check: http://localhost:${port}/`);
-      });
+      await fastify.listen({ port, host: "0.0.0.0" }); // ✅ await instead of callback
+      console.log(`🚀 WebSocket Proxy Server running on ws://localhost:${port}/ws`);
+      console.log(`❤️ Health check: http://localhost:${port}/`);
       break;
     } catch {
       console.warn(`⚠️ Port ${port} in use. Trying ${port + 1}...`);
