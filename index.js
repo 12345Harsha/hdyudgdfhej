@@ -5,7 +5,6 @@ const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fet
 
 console.log('🚀 WebSocket relay server starting...');
 
-// Environment variables
 const VAPI_API_KEY = process.env.VAPI_API_KEY;
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
 const SERVER_PORT = process.env.PORT || 8766;
@@ -18,7 +17,7 @@ if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID) {
 let telecmiSocket = null;
 let vapiSocket = null;
 
-// 🔗 Get Vapi WebSocket URL
+// ✅ Clean Vapi WebSocket URL fetch
 async function getVapiWebSocketUrl() {
   try {
     const response = await fetch('https://api.vapi.ai/call', {
@@ -32,6 +31,7 @@ async function getVapiWebSocketUrl() {
         transport: {
           provider: 'vapi.websocket'
         }
+        // ❌ audio block removed to prevent error
       })
     });
 
@@ -50,7 +50,7 @@ async function getVapiWebSocketUrl() {
   }
 }
 
-// 🟢 Start WebSocket server for TeleCMI
+// ✅ Start WebSocket server
 const server = new WebSocket.Server({ port: SERVER_PORT });
 
 server.on('connection', async (ws) => {
@@ -63,7 +63,6 @@ server.on('connection', async (ws) => {
     return;
   }
 
-  // Connect to Vapi WebSocket
   vapiSocket = new WebSocket(vapiWsUrl, {
     headers: {
       Authorization: `Bearer ${VAPI_API_KEY}`
@@ -74,32 +73,26 @@ server.on('connection', async (ws) => {
     console.log('🟢 Connected to Vapi');
   });
 
-  // Vapi → TeleCMI
   vapiSocket.on('message', (msg) => {
     if (Buffer.isBuffer(msg)) {
-      try {
-        const base64Audio = msg.toString('base64');
-        const stream = new StreamAction();
-        const payload = stream.playStream(base64Audio, 'raw', 8000);
+      const base64Audio = msg.toString('base64');
+      const stream = new StreamAction();
+      const payload = stream.playStream(base64Audio, 'raw', 8000);
 
-        if (telecmiSocket?.readyState === WebSocket.OPEN) {
-          telecmiSocket.send(payload);
-          console.log('📥 Vapi → 📤 TeleCMI');
-        }
-      } catch (err) {
-        console.error('❌ Error handling audio from Vapi:', err.message);
+      if (telecmiSocket?.readyState === WebSocket.OPEN) {
+        telecmiSocket.send(payload);
+        console.log('📥 Vapi → 📤 TeleCMI');
       }
     } else {
       try {
         const data = JSON.parse(msg);
-        if (data.type) console.log(`📩 Vapi event: ${data.type}`);
+        if (data.type) console.log(`📩 Vapi Event: ${data.type}`);
       } catch {
-        console.log('📩 Non-binary Vapi message');
+        console.log('📩 Vapi Non-binary message');
       }
     }
   });
 
-  // TeleCMI → Vapi
   ws.on('message', (msg) => {
     if (vapiSocket?.readyState === WebSocket.OPEN) {
       vapiSocket.send(msg);
@@ -109,17 +102,16 @@ server.on('connection', async (ws) => {
     }
   });
 
-  // Error handlers
   vapiSocket.on('error', (err) => {
     console.error('❌ Vapi socket error:', err.message || err);
   });
 
-  ws.on('error', (err) => {
-    console.error('❌ TeleCMI socket error:', err.message || err);
-  });
-
   vapiSocket.on('close', (code, reason) => {
     console.log(`🔴 Vapi connection closed - Code: ${code}, Reason: ${reason || 'No reason'}`);
+  });
+
+  ws.on('error', (err) => {
+    console.error('❌ TeleCMI socket error:', err);
   });
 
   ws.on('close', (code, reason) => {
@@ -130,7 +122,6 @@ server.on('connection', async (ws) => {
   });
 });
 
-// WebSocket server error handler
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
     console.error(`❌ Port ${SERVER_PORT} already in use`);
@@ -139,7 +130,6 @@ server.on('error', (err) => {
   }
 });
 
-// Graceful shutdown
 process.on('SIGINT', () => {
   console.log('\n🛑 Shutting down...');
   if (telecmiSocket) telecmiSocket.close();
@@ -149,7 +139,6 @@ process.on('SIGINT', () => {
   });
 });
 
-// Server startup logs
 console.log(`🚀 WebSocket relay listening on ws://0.0.0.0:${SERVER_PORT}`);
 console.log('🔗 Bridging TeleCMI ↔ Vapi');
 console.log('⏳ Waiting for connection...');
