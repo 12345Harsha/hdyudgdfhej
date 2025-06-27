@@ -1,4 +1,4 @@
-import WebSocket from 'ws';
+  import WebSocket from 'ws';
 import fs from 'fs';
 import Speaker from 'speaker';
 
