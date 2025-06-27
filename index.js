@@ -1,182 +1,155 @@
-import Fastify from "fastify";
-import fastifyWebsocket from "@fastify/websocket";
-import WebSocket from "ws";
-import dotenv from "dotenv";
-import { StreamAction } from "piopiy";
-import net from "net";
+require('dotenv').config();
+const WebSocket = require('ws');
+const { StreamAction } = require('piopiy');
 
-dotenv.config();
-console.log("🔍 CHECKPOINT: index.js loaded");
+console.log('🚀 WebSocket relay server starting...');
 
-const { ELEVENLABS_AGENT_ID, ELEVENLABS_API_KEY } = process.env;
+// Configuration from environment variables
+const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY;
+const AGENT_ID = process.env.AGENT_ID;
+const ELEVENLABS_WS_URL = `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${AGENT_ID}`;
+const SERVER_PORT = 8766;
 
-console.log("🔐 API Key loaded:", ELEVENLABS_API_KEY ? "✅ SET" : "❌ MISSING");
-console.log("🎙 Voice ID:", ELEVENLABS_AGENT_ID ? "✅ SET" : "❌ MISSING");
-
-const fastify = Fastify();
-fastify.register(fastifyWebsocket);
-console.log("✅ WebSocket plugin registered");
-
-const stream = new StreamAction();
-
-fastify.get("/", async (req, reply) => {
-  reply.send({ status: "✅ WebSocket server is running" });
-});
-
-function ulawToPcm16(buffer) {
-  const MULAW_BIAS = 33;
-  const pcmSamples = new Int16Array(buffer.length);
-  for (let i = 0; i < buffer.length; i++) {
-    let muLawByte = buffer[i] ^ 0xff;
-    let sign = muLawByte & 0x80;
-    let exponent = (muLawByte >> 4) & 0x07;
-    let mantissa = muLawByte & 0x0f;
-    let sample = ((mantissa << 4) + 0x08) << (exponent + 3);
-    sample = sign ? (MULAW_BIAS - sample) : (sample - MULAW_BIAS);
-    pcmSamples[i] = sample;
-  }
-  return Buffer.from(pcmSamples.buffer);
+if (!ELEVENLABS_API_KEY || !AGENT_ID) {
+  console.error('❌ Missing ELEVENLABS_API_KEY or AGENT_ID in environment variables.');
+  process.exit(1);
 }
 
-function pcm16ToUlaw(buffer) {
-  const pcmSamples = new Int16Array(buffer.buffer, buffer.byteOffset, buffer.byteLength / 2);
-  const MULAW_MAX = 0x1fff;
-  const MULAW_BIAS = 33;
-  const ulawBuffer = Buffer.alloc(pcmSamples.length);
-  for (let i = 0; i < pcmSamples.length; i++) {
-    let sample = pcmSamples[i];
-    let sign = sample < 0 ? 0x80 : 0;
-    if (sign) sample = -sample;
-    sample += MULAW_BIAS;
-    if (sample > MULAW_MAX) sample = MULAW_MAX;
-    let exponent = 7;
-    for (let expMask = 0x4000; (sample & expMask) === 0 && exponent > 0; expMask >>= 1) {
-      exponent--;
+let telecmiSocket = null;
+let elevenlabsSocket = null;
+
+// Create WebSocket server
+const server = new WebSocket.Server({ port: SERVER_PORT });
+
+server.on('connection', (ws) => {
+  console.log('✅ TeleCMI connected');
+  telecmiSocket = ws;
+  
+  // Connect to ElevenLabs
+  elevenlabsSocket = new WebSocket(ELEVENLABS_WS_URL, {
+    headers: {
+      'xi-api-key': ELEVENLABS_API_KEY
     }
-    let mantissa = (sample >> (exponent + 3)) & 0x0f;
-    let ulawByte = ~(sign | (exponent << 4) | mantissa);
-    ulawBuffer[i] = ulawByte;
-  }
-  return ulawBuffer;
-}
-
-fastify.get("/ws", { websocket: true }, (connection) => {
-  const telecmiSocket = connection.socket;
-  console.log("📞 TeleCMI connected");
-
-  if (!ELEVENLABS_AGENT_ID || !ELEVENLABS_API_KEY) {
-    console.error("❌ Missing ElevenLabs credentials");
-    telecmiSocket.close();
-    return;
-  }
-
-  const elevenLabsSocket = new WebSocket(
-    `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${ELEVENLABS_AGENT_ID}`,
-    {
-      headers: {
-        Authorization: `Bearer ${ELEVENLABS_API_KEY}`,
-      },
-    }
-  );
-
-  elevenLabsSocket.on("open", () => {
-    console.log("🟢 Connected to ElevenLabs");
-
-    elevenLabsSocket.send(JSON.stringify({ type: "conversation_initiation_client_data" }));
-    elevenLabsSocket.send(JSON.stringify({
-      type: "agent_output_audio_format",
-      audio_format: {
-        encoding: "mulaw",
-        sample_rate: 8000,
-      },
-    }));
-    console.log("🛠 Requested μ-law 8000Hz audio from ElevenLabs");
   });
 
-  elevenLabsSocket.on("message", async (data) => {
+  // ElevenLabs WebSocket event handlers
+  elevenlabsSocket.on('open', () => {
+    console.log('🟢 Connected to ElevenLabs');
+  });
+
+  elevenlabsSocket.on('message', (msg) => {
     try {
-      const msg = JSON.parse(data);
-      if (msg.type === "ping") {
-        elevenLabsSocket.send(JSON.stringify({ type: "pong", event_id: msg.event_id }));
-      } else if (msg.audio) {
-        const audioBuffer = Buffer.from(msg.audio, "base64");
-        console.log("🔊 Received audio from ElevenLabs:", audioBuffer.length);
-
-        const base64Raw = audioBuffer.toString("base64");
-        await stream.playStream(base64Raw, "raw", 8000);
-        console.log("📤 Piopiy streaming base64 audio (8000Hz raw)");
-
-        if (telecmiSocket.readyState === WebSocket.OPEN) {
-          const ulawBuffer = pcm16ToUlaw(audioBuffer);
-          telecmiSocket.send(ulawBuffer);
-          console.log("📨 Sent audio back to TeleCMI (converted)");
+      const data = JSON.parse(msg);
+      console.log('📥 Received from ElevenLabs:', data.type || 'audio');
+      
+      // Handle audio events from ElevenLabs
+      if (data.audio_event && data.audio_event.audio_base_64) {
+        const b64Audio = data.audio_event.audio_base_64;
+        const stream = new StreamAction();
+        
+        try {
+          // Create payload for TeleCMI
+          const payload = stream.playStream(b64Audio, 'raw', 8000);
+          
+          // Send to TeleCMI if connection is open
+          if (telecmiSocket && telecmiSocket.readyState === WebSocket.OPEN) {
+            telecmiSocket.send(payload);
+            console.log('📤 Audio sent to TeleCMI');
+          } else {
+            console.warn('⚠️ TeleCMI socket not available');
+          }
+        } catch (streamErr) {
+          console.error('❌ Error creating stream payload:', streamErr);
         }
-      } else {
-        console.log("📩 ElevenLabs message:", msg);
       }
     } catch (err) {
-      console.error("❌ ElevenLabs parse error:", err.message);
+      console.error('❌ Error processing ElevenLabs message:', err);
     }
   });
 
-  elevenLabsSocket.on("error", (err) => {
-    console.error("💥 ElevenLabs error:", err.message);
-    telecmiSocket.close();
+  elevenlabsSocket.on('error', (err) => {
+    console.error('❌ ElevenLabs WebSocket error:', err);
   });
 
-  elevenLabsSocket.on("close", () => {
-    console.log("🔌 ElevenLabs disconnected");
-    if (telecmiSocket.readyState === WebSocket.OPEN) {
-      telecmiSocket.close();
-    }
+  elevenlabsSocket.on('close', (code, reason) => {
+    console.log(`❌ ElevenLabs WebSocket closed - Code: ${code}, Reason: ${reason}`);
   });
 
-  telecmiSocket.on("message", (data) => {
+  // TeleCMI WebSocket event handlers
+  ws.on('message', (msg) => {
     try {
-      const pcm16Buffer = ulawToPcm16(data);
-      const base64 = pcm16Buffer.toString("base64");
-      elevenLabsSocket.send(JSON.stringify({ user_audio_chunk: base64 }));
-      console.log("🎧 Sent audio from TeleCMI to ElevenLabs");
+      // Convert message to buffer if needed
+      const audioBuffer = Buffer.isBuffer(msg) ? msg : Buffer.from(msg);
+      const b64Audio = audioBuffer.toString('base64');
+      
+      // Send audio to ElevenLabs if connection is open
+      if (elevenlabsSocket && elevenlabsSocket.readyState === WebSocket.OPEN) {
+        const payload = JSON.stringify({
+          audio_event: {
+            audio_base_64: b64Audio
+          }
+        });
+        
+        elevenlabsSocket.send(payload);
+        console.log('📤 Audio sent to ElevenLabs');
+      } else {
+        console.warn('⚠️ ElevenLabs socket not available');
+      }
     } catch (err) {
-      console.error("❌ Audio conversion error:", err.message);
+      console.error('❌ Error processing TeleCMI message:', err);
     }
   });
 
-  telecmiSocket.on("close", () => {
-    console.log("❎ TeleCMI disconnected");
-    if (elevenLabsSocket.readyState === WebSocket.OPEN) {
-      elevenLabsSocket.close();
-    }
+  ws.on('error', (err) => {
+    console.error('❌ TeleCMI WebSocket error:', err);
   });
 
-  telecmiSocket.on("error", (err) => {
-    console.error("💥 TeleCMI socket error:", err.message);
+  ws.on('close', (code, reason) => {
+    console.log(`🔌 TeleCMI disconnected - Code: ${code}, Reason: ${reason}`);
+    
+    // Clean up ElevenLabs connection
+    if (elevenlabsSocket && elevenlabsSocket.readyState === WebSocket.OPEN) {
+      elevenlabsSocket.close();
+    }
+    
+    // Reset references
+    telecmiSocket = null;
+    elevenlabsSocket = null;
   });
 });
 
-const tryListen = (port) => {
-  return new Promise((resolve, reject) => {
-    const tester = net.createServer()
-      .once('error', err => err.code === 'EADDRINUSE' ? reject() : resolve(port))
-      .once('listening', () => tester.close(() => resolve(port)))
-      .listen(port);
-  });
-};
+// Server error handling
+server.on('error', (err) => {
+  console.error('❌ WebSocket server error:', err);
+});
 
-const startServer = async () => {
-  let port = parseInt(process.env.PORT, 10) || 3020;
-  while (true) {
-    try {
-      await tryListen(port);
-      await fastify.listen({ port, host: "0.0.0.0" }); // ✅ await instead of callback
-      console.log(`🚀 WebSocket Proxy Server running on ws://localhost:${port}/ws`);
-      console.log(`❤️ Health check: http://localhost:${port}/`);
-      break;
-    } catch {
-      console.warn(`⚠️ Port ${port} in use. Trying ${port + 1}...`);
-      port++;
-    }
+let shuttingDown = false;
+
+// Graceful shutdown
+process.on('SIGINT', () => {
+  if (shuttingDown) return; // Prevent multiple calls
+  shuttingDown = true;
+
+  console.log('\n🛑 Shutting down server...');
+  
+  if (telecmiSocket) {
+    telecmiSocket.close();
   }
-};
+  
+  if (elevenlabsSocket) {
+    elevenlabsSocket.close();
+  }
+  
+  server.close(() => {
+    console.log('✅ Server shut down gracefully');
+    // Do not exit process here to keep server running for testing
+    // process.exit(0);
+  });
+});
 
-startServer();
+console.log(`🚀 WebSocket relay server listening on ws://0.0.0.0:${SERVER_PORT}`);
+console.log('🔗 Bridging TeleCMI ↔ ElevenLabs audio streams');
+console.log('⏳ Waiting for TeleCMI connection...');
+console.log('Press Ctrl+C to stop the server');
+
+const ws = new WebSocket('ws://localhost:8766');
