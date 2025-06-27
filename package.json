@@ -1,19 +1,16 @@
 {
   "name": "telecmi-elevenlabs-proxy",
   "version": "1.0.0",
-  "type": "module",
+  "description": "Relay between TeleCMI WebSocket and ElevenLabs conversational AI",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "client": "node websocket_client.js"
   },
   "dependencies": {
-    "@fastify/websocket": "^9.0.0",
-    "dotenv": "^16.4.5",
-    "fastify": "^4.26.1",
-    "fs": "^0.0.1-security",
-    "mic": "^2.1.2",
-    "piopiy": "^1.0.8",
-    "wav": "^1.0.2",
-    "ws": "^8.18.2"
+    "dotenv": "^16.3.1",
+    "piopiy": "^1.0.1",
+    "speaker": "^0.5.3",
+    "ws": "^8.13.0"
   }
 }
