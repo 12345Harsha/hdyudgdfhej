@@ -1,16 +1,16 @@
 {
-  "name": "telecmi-elevenlabs-proxy",
+  "name": "telecmi-vapi-proxy",
   "version": "1.0.0",
-  "description": "Relay between TeleCMI WebSocket and ElevenLabs conversational AI",
+  "description": "WebSocket relay between TeleCMI and Vapi AI Assistant",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "client": "node websocket_client.js"
+    "client": "node client.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "dependencies": {
     "dotenv": "^16.3.1",
     "piopiy": "^1.0.1",
-    "speaker": "^0.5.3",
     "ws": "^8.13.0"
   }
 }
