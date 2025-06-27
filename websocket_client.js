@@ -1,55 +1,47 @@
-  import WebSocket from 'ws';
-import fs from 'fs';
-import Speaker from 'speaker';
+const WebSocket = require('ws');
+const fs = require('fs');
 
-// Connect to the local WebSocket server
-const ws = new WebSocket('ws://localhost:8766');
-
-// Optional: Replace with path to your test audio file
-const AUDIO_FILE = 'test_audio.ulaw'; // Make sure it's 8000 Hz, 8-bit, mono, ulaw-encoded
-
-// Speaker setup to play received audio
-const speaker = new Speaker({
-  channels: 1,
-  bitDepth: 8,
-  sampleRate: 8000,
-  signed: false,
-  endian: 'little',
-});
+const AUDIO_FILE = 'test_audio.ulaw'; // Optional: Only if you want to send audio
+const SERVER_URL = 'ws://localhost:8766';
 
 function connect() {
-  ws.on('open', () => {
-    console.log('📤 websocket_client.js connected to server');
+  const ws = new WebSocket(SERVER_URL);
 
-    try {
-      const audioData = fs.readFileSync(AUDIO_FILE); // Synchronous read for test audio
-      console.log(`🎧 Sending ${AUDIO_FILE} (${audioData.length} bytes)`);
-      ws.send(audioData); // Send binary audio buffer
-    } catch (err) {
-      console.error('❌ Error reading audio file:', err);
+  ws.on('open', () => {
+    console.log('📤 Connected to WebSocket relay (Vapi)');
+
+    // Optional: Send audio file if it exists
+    if (fs.existsSync(AUDIO_FILE)) {
+      try {
+        const audioData = fs.readFileSync(AUDIO_FILE);
+        console.log(`🎧 Sending test audio: ${AUDIO_FILE} (${audioData.length} bytes)`);
+        ws.send(audioData);
+      } catch (err) {
+        console.error('❌ Error reading audio file:', err);
+      }
+    } else {
+      ws.send('Hello from client!');
     }
   });
 
   ws.on('message', (data) => {
     if (Buffer.isBuffer(data)) {
-      // Received raw audio from ElevenLabs → play it
-      speaker.write(data);
+      console.log('📥 Received binary data:', data.length, 'bytes');
     } else {
-      console.log('📩 Received non-binary message:', data.toString());
+      console.log('📩 Received message:', data.toString());
     }
   });
 
   ws.on('close', () => {
-    console.log('🔌 websocket_client.js disconnected');
-    // Attempt to reconnect after 3 seconds
+    console.log('🔌 Disconnected from server');
     setTimeout(() => {
-      console.log('🔄 Reconnecting websocket_client.js...');
+      console.log('🔄 Attempting to reconnect...');
       connect();
     }, 3000);
   });
 
   ws.on('error', (err) => {
-    console.error('❗ WebSocket error:', err);
+    console.error('❗ WebSocket error:', err.message || err);
   });
 }
 
