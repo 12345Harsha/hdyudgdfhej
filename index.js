@@ -1,10 +1,10 @@
 require('dotenv').config();
 const WebSocket = require('ws');
+const { StreamAction } = require('piopiy');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 console.log('🚀 WebSocket relay server starting...');
 
-// Load env variables
 const VAPI_API_KEY = process.env.VAPI_API_KEY;
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
 const SERVER_PORT = process.env.PORT || 8766;
@@ -17,7 +17,7 @@ if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID) {
 let telecmiSocket = null;
 let vapiSocket = null;
 
-// Get WebSocket call URL from Vapi
+// ✅ Corrected structure to match Vapi WebSocket spec
 async function getVapiWebSocketUrl() {
   try {
     const response = await fetch('https://api.vapi.ai/call', {
@@ -29,7 +29,12 @@ async function getVapiWebSocketUrl() {
       body: JSON.stringify({
         assistantId: VAPI_ASSISTANT_ID,
         transport: {
-          provider: 'vapi.websocket'
+          provider: 'vapi.websocket',
+          audioFormat: {
+            format: 'pcm_s16le',
+            container: 'raw',
+            sampleRate: 16000
+          }
         }
       })
     });
@@ -49,7 +54,7 @@ async function getVapiWebSocketUrl() {
   }
 }
 
-// Start WebSocket relay server
+// Start WebSocket server
 const server = new WebSocket.Server({ port: SERVER_PORT });
 
 server.on('connection', async (ws) => {
@@ -62,7 +67,6 @@ server.on('connection', async (ws) => {
     return;
   }
 
-  // Connect to Vapi WebSocket
   vapiSocket = new WebSocket(vapiWsUrl, {
     headers: {
       Authorization: `Bearer ${VAPI_API_KEY}`
@@ -73,28 +77,30 @@ server.on('connection', async (ws) => {
     console.log('🟢 Connected to Vapi');
   });
 
-  // Receive audio from Vapi → send to TeleCMI
   vapiSocket.on('message', (msg) => {
     if (Buffer.isBuffer(msg)) {
+      const base64Audio = msg.toString('base64');
+      const stream = new StreamAction();
+      const payload = stream.playStream(base64Audio, 'raw', 16000); // Match Vapi's expected sample rate
+
       if (telecmiSocket?.readyState === WebSocket.OPEN) {
-        telecmiSocket.send(msg);
-        console.log('📥 Vapi → 📤 TeleCMI (raw audio)');
+        telecmiSocket.send(payload);
+        console.log('📥 Vapi → 📤 TeleCMI');
       }
     } else {
       try {
         const data = JSON.parse(msg);
         if (data.type) console.log(`📩 Vapi Event: ${data.type}`);
       } catch {
-        console.log('📩 Vapi sent non-binary message');
+        console.log('📩 Vapi Non-binary message');
       }
     }
   });
 
-  // Receive audio from TeleCMI → send to Vapi
   ws.on('message', (msg) => {
     if (vapiSocket?.readyState === WebSocket.OPEN) {
       vapiSocket.send(msg);
-      console.log('📤 TeleCMI → Vapi (raw audio)');
+      console.log('📤 TeleCMI → Vapi');
     } else {
       console.warn('⚠️ Vapi socket not open');
     }
