@@ -17,7 +17,7 @@ if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID) {
 let telecmiSocket = null;
 let vapiSocket = null;
 
-// ✅ Corrected structure to match Vapi WebSocket spec
+// ✅ Proper Vapi Call Format
 async function getVapiWebSocketUrl() {
   try {
     const response = await fetch('https://api.vapi.ai/call', {
@@ -27,7 +27,9 @@ async function getVapiWebSocketUrl() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        assistantId: VAPI_ASSISTANT_ID,
+        assistant: {
+          assistantId: VAPI_ASSISTANT_ID
+        },
         transport: {
           provider: 'vapi.websocket',
           audioFormat: {
@@ -79,9 +81,10 @@ server.on('connection', async (ws) => {
 
   vapiSocket.on('message', (msg) => {
     if (Buffer.isBuffer(msg)) {
+      // 🟡 Convert PCM to base64 and stream to TeleCMI
       const base64Audio = msg.toString('base64');
       const stream = new StreamAction();
-      const payload = stream.playStream(base64Audio, 'raw', 16000); // Match Vapi's expected sample rate
+      const payload = stream.playStream(base64Audio, 'raw', 16000);
 
       if (telecmiSocket?.readyState === WebSocket.OPEN) {
         telecmiSocket.send(payload);
