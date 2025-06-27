@@ -1,6 +1,6 @@
-// index.js
 require('dotenv').config();
 const WebSocket = require('ws');
+const { StreamAction } = require('piopiy');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
 console.log('🚀 WebSocket relay server starting...');
@@ -17,7 +17,7 @@ if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID) {
 let telecmiSocket = null;
 let vapiSocket = null;
 
-// ✅ Corrected payload as per Vapi's WebSocket spec
+// ✅ Get WebSocket call URL from Vapi
 async function getVapiWebSocketUrl() {
   try {
     const response = await fetch('https://api.vapi.ai/call', {
@@ -27,7 +27,7 @@ async function getVapiWebSocketUrl() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        assistantId: VAPI_ASSISTANT_ID,
+        assistantId: VAPI_ASSISTANT_ID, // ✅ FIXED: moved out of "assistant"
         transport: {
           provider: 'vapi.websocket',
           audioFormat: {
@@ -54,7 +54,7 @@ async function getVapiWebSocketUrl() {
   }
 }
 
-// Start WebSocket server
+// ✅ Start WebSocket Server
 const server = new WebSocket.Server({ port: SERVER_PORT });
 
 server.on('connection', async (ws) => {
@@ -78,9 +78,22 @@ server.on('connection', async (ws) => {
   });
 
   vapiSocket.on('message', (msg) => {
-    if (telecmiSocket?.readyState === WebSocket.OPEN) {
-      telecmiSocket.send(msg);
-      console.log('📥 Vapi → 📤 TeleCMI');
+    if (Buffer.isBuffer(msg)) {
+      const base64Audio = msg.toString('base64');
+      const stream = new StreamAction();
+      const payload = stream.playStream(base64Audio, 'raw', 16000); // 🔊 Match Vapi audio config
+
+      if (telecmiSocket?.readyState === WebSocket.OPEN) {
+        telecmiSocket.send(payload);
+        console.log('📥 Vapi → 📤 TeleCMI');
+      }
+    } else {
+      try {
+        const data = JSON.parse(msg);
+        if (data.type) console.log(`📩 Vapi Event: ${data.type}`);
+      } catch {
+        console.log('📩 Vapi Non-binary message');
+      }
     }
   });
 
@@ -130,6 +143,6 @@ process.on('SIGINT', () => {
   });
 });
 
-console.log(`🚀 Listening on ws://0.0.0.0:${SERVER_PORT}`);
+console.log(`🚀 WebSocket relay listening on ws://0.0.0.0:${SERVER_PORT}`);
 console.log('🔗 Bridging TeleCMI ↔ Vapi');
 console.log('⏳ Waiting for connection...');
