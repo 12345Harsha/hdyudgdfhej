@@ -1,4 +1,5 @@
 require('dotenv').config();
+require('dotenv').config();
 const WebSocket = require('ws');
 const { StreamAction } = require('piopiy');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
@@ -17,7 +18,7 @@ if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID) {
 let telecmiSocket = null;
 let vapiSocket = null;
 
-// ✅ Proper Vapi Call Format
+// ✅ Corrected Vapi Call Payload
 async function getVapiWebSocketUrl() {
   try {
     const response = await fetch('https://api.vapi.ai/call', {
@@ -27,9 +28,7 @@ async function getVapiWebSocketUrl() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        assistant: {
-          assistantId: VAPI_ASSISTANT_ID
-        },
+        assistantId: VAPI_ASSISTANT_ID,
         transport: {
           provider: 'vapi.websocket',
           audioFormat: {
@@ -56,7 +55,7 @@ async function getVapiWebSocketUrl() {
   }
 }
 
-// Start WebSocket server
+// ✅ WebSocket Server Setup
 const server = new WebSocket.Server({ port: SERVER_PORT });
 
 server.on('connection', async (ws) => {
@@ -81,10 +80,9 @@ server.on('connection', async (ws) => {
 
   vapiSocket.on('message', (msg) => {
     if (Buffer.isBuffer(msg)) {
-      // 🟡 Convert PCM to base64 and stream to TeleCMI
       const base64Audio = msg.toString('base64');
       const stream = new StreamAction();
-      const payload = stream.playStream(base64Audio, 'raw', 16000);
+      const payload = stream.playStream(base64Audio, 'raw', 16000); // ✅ 16000 for Vapi clarity
 
       if (telecmiSocket?.readyState === WebSocket.OPEN) {
         telecmiSocket.send(payload);
@@ -149,3 +147,4 @@ process.on('SIGINT', () => {
 console.log(`🚀 WebSocket relay listening on ws://0.0.0.0:${SERVER_PORT}`);
 console.log('🔗 Bridging TeleCMI ↔ Vapi');
 console.log('⏳ Waiting for connection...');
+
