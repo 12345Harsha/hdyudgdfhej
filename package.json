@@ -1,16 +1,18 @@
 {
-  "name": "telecmi-vapi-proxy",
+  "name": "telecmi-vapi-relay",
   "version": "1.0.0",
+  "description": "WebSocket relay server to bridge TeleCMI and Vapi",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
+  "keywords": [],
+  "author": "harshavarthini",
+  "license": "ISC",
   "dependencies": {
-    "ws": "^8.15.1",
-    "dotenv": "^16.6.0",
-    "node-fetch": "^3.3.2",
-    "piopiy": "^1.0.7",
-    "pcm-convert": "^1.0.0"
-  },
-  "type": "module"
+    "dotenv": "^16.3.1",
+    "node-fetch": "^3.4.1",
+    "piopiy": "^1.0.4",
+    "ws": "^8.13.0"
+  }
 }
