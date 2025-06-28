@@ -2,15 +2,15 @@
   "name": "telecmi-vapi-proxy",
   "version": "1.0.0",
   "main": "index.js",
-  "type": "commonjs",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
+    "ws": "^8.15.1",
     "dotenv": "^16.6.0",
     "node-fetch": "^3.3.2",
-    "piopiy": "^1.0.2",
-    "ws": "^8.18.2"
-  }
+    "piopiy": "^1.0.7",
+    "pcm-convert": "^1.0.0"
+  },
+  "type": "module"
 }
-
