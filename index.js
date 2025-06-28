@@ -1,6 +1,6 @@
 // index.js
 import dotenv from 'dotenv';
-import WebSocket from 'ws';
+import { WebSocketServer } from 'ws';
 import fetch from 'node-fetch';
 import { StreamAction } from 'piopiy';
 import pcmConvert from 'pcm-convert';
