@@ -1,12 +1,15 @@
-import 'dotenv/config';
-import WebSocket, { WebSocketServer } from 'ws';
+// index.js
+import dotenv from 'dotenv';
+import WebSocket from 'ws';
 import fetch from 'node-fetch';
 import { StreamAction } from 'piopiy';
 import pcmConvert from 'pcm-convert';
 
+dotenv.config();
+
 const VAPI_API_KEY = process.env.VAPI_API_KEY;
 const VAPI_ASSISTANT_ID = process.env.VAPI_ASSISTANT_ID;
-const SERVER_PORT = process.env.PORT || 8766;
+const SERVER_PORT = process.env.PORT || 10000;
 
 console.log('🚀 WebSocket relay server starting...');
 
@@ -18,7 +21,6 @@ if (!VAPI_API_KEY || !VAPI_ASSISTANT_ID) {
 let telecmiSocket = null;
 let vapiSocket = null;
 
-// 🔗 Fetch Vapi WebSocket URL
 async function getVapiWebSocketUrl() {
   try {
     const response = await fetch('https://api.vapi.ai/call', {
@@ -28,7 +30,9 @@ async function getVapiWebSocketUrl() {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        assistant: { id: VAPI_ASSISTANT_ID },
+        assistant: {
+          id: VAPI_ASSISTANT_ID
+        },
         transport: {
           provider: 'vapi.websocket',
           audioFormat: {
@@ -55,8 +59,7 @@ async function getVapiWebSocketUrl() {
   }
 }
 
-// 🌐 Start WebSocket server
-const server = new WebSocketServer({ port: SERVER_PORT });
+const server = new WebSocket.Server({ port: SERVER_PORT });
 
 server.on('connection', async (ws) => {
   console.log('✅ TeleCMI (or local client) connected');
@@ -78,7 +81,6 @@ server.on('connection', async (ws) => {
     console.log('🟢 Connected to Vapi');
   });
 
-  // 🔁 Handle messages from Vapi
   vapiSocket.on('message', (msg) => {
     if (Buffer.isBuffer(msg)) {
       try {
@@ -108,7 +110,6 @@ server.on('connection', async (ws) => {
     }
   });
 
-  // 🔁 Handle messages from TeleCMI
   ws.on('message', (msg) => {
     if (vapiSocket?.readyState === WebSocket.OPEN) {
       vapiSocket.send(msg);
